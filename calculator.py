@@ -71,22 +71,28 @@ def handle_currency(message):
 
         if currency:
             try:
-                amount = float(message.text.replace(",", ""))
+                amount = float(message.text.replace(",", "").strio())
                 #fetch real time retes 
-                response = requests.get(f"https://v6.exchangerate-api.com/v6/{os.getenv('API_KEY')}/latest/UZS")
+                response = response = requests.get(f"https://v6.exchangerate-api.com/v6/{os.getenv('API_KEY')}/latest/UZS")
                 data = response.json()
                 print(data)
 
                 rate = data["conversion_rates"][currency]
                 result = amount * rate
 
-                bot.send_message(chat_id, f"✅ {amount} UZS = {result:.2f} {currency}")
+                bot.send_message(chat_id, f"✅ {amount:,.0f} UZS = {result:.2f} {currency}")
                 user_choice[chat_id]= None #reset after result
                 start(message) # calls existing function again
 
+            except ValueError:
+              bot.send_message(chat_id, "⚠️ Please enter a valid number, e.g. 50000")
             except Exception as e:
-              print("ERROR:", e)
-            bot.send_message(chat_id, f"ERROR: {e}")
+                print("ERROR:", e)
+
+                bot.send_message(chat_id, f"❌ Something went wrong: {e}")
+
+            else:
+                bot.send_message(chat_id, "Please choose a currency first using the buttons below.")
 
 
 
