@@ -1,93 +1,97 @@
 import telebot 
 import requests
 from dotenv import load_dotenv
-load_dotenv(dotenv_path=".env")
 import os
 from telebot import types
 
-
-
+load_dotenv(dotenv_path=".env")
 bot = telebot.TeleBot(os.getenv("BOT_TOKEN"))
 
-# Start and Dreeting
+# State management
+user_lang = {}    # Stores 'en', 'ru', 'uz'
+user_choice = {}  # Stores 'USD', 'EUR', 'RUB'
+
+LANGUAGES = {
+    "en": {
+        "welcome": "👋 Welcome {name}! Your fast and simple currency converter 💱",
+        "lang_set": "✅ Language set to English.",
+        "prompt": "How much UZS do you want to convert to {currency}?",
+        "result": "✅ {amount:,.0f} UZS = {result:.2f} {currency}",
+        "error_num": "⚠️ Please enter a valid number, e.g. 50000",
+        "choose_currency": "Please choose a currency first."
+    },
+    "ru": {
+        "welcome": "👋 Добро пожаловать, {name}, в Coiny! Ваш быстрый и простой конвертер валют 💱",
+        "lang_set": "✅ Язык установлен на русский.",
+        "prompt": "Сколько UZS вы хотите конвертировать в {currency}?",
+        "result": "✅ {amount:,.0f} UZS = {result:.2f} {currency}",
+        "error_num": "⚠️ Пожалуйста, введите корректное число, например 50000",
+        "choose_currency": "Пожалуйста, сначала выберите валюту."
+    },
+    "uz": {
+        "welcome": "👋 Coiny-ga xush kelibsiz, {name}! Tez va oson valyuta ayirboshlash xizmati 💱",
+        "lang_set": "✅ Til o'zbek tiliga o'rnatildi.",
+        "prompt": "{currency} ga qancha UZS ayirboshlamoqchisiz?",
+        "result": "✅ {amount:,.0f} UZS = {result:.2f} {currency}",
+        "error_num": "⚠️ Iltimos, to'g'ri son kiriting, masalan 50000",
+        "choose_currency": "Iltimos, avval valyutani tanlang."
+    }
+}
+
+def get_text(chat_id, key, **kwargs):
+    lang = user_lang.get(chat_id, "en")
+    text = LANGUAGES[lang].get(key, LANGUAGES["en"][key])
+    return text.format(**kwargs)
 
 @bot.message_handler(commands=["start"])
 def start(message):
-    name = message.from_user.first_name
-
-    # keyboard
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    btn1 = types.KeyboardButton("🇺🇸 USD")
-    btn2 = types.KeyboardButton("🇪🇺 EUR")
-    btn3 = types.KeyboardButton("🇷🇺 RUB")
-    markup.row(btn1, btn2, btn3)
-
-    # send photo with caption
-    file = open("greeting_photo.jpg", "rb")
-    bot.send_photo(message.chat.id, file)
-
-
-
-    bot.send_message(message.chat.id,
-        f"👋 Welcome {name} to Coiny!\n"
-        "Your fast and simple currency converter 💱"
-    )
-    print("message sent")
-    # send buttons
-    bot.reply_to(message, "Choose a currency to convert from UZS:", reply_markup=markup)
-
-
-    
- 
-
-    
-
-
-    
-
-user_choice = {} # this stores which currency the user picked
+    markup.row("🇬🇧 English", "🇷🇺 Русский", "🇺🇿 O'zbekcha")
+    bot.send_message(message.chat.id, "Select your language / Tilni tanlang:", reply_markup=markup)
 
 @bot.message_handler(func=lambda message: True)
-def handle_currency(message):
+def handle_all(message):
     chat_id = message.chat.id
+    text = message.text
 
-    if message.text in ["🇺🇸 USD", "🇪🇺 EUR", "🇷🇺 RUB"]:
-        # Extract currency code from button text (e.g., "🇺🇸 USD" -> "USD")
-        currency = message.text.split(" ")[1]
+    # 1. Handle Language Selection
+    if text in ["🇬🇧 English", "🇷🇺 Русский", "🇺🇿 O'zbekcha"]:
+        mapping = {"🇬🇧 English": "en", "🇷🇺 Русский": "ru", "🇺🇿 O'zbekcha": "uz"}
+        user_lang[chat_id] = mapping[text]
+        
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        markup.row("🇺🇸 USD", "🇪🇺 EUR", "🇷🇺 RUB")
+        bot.send_message(chat_id, get_text(chat_id, "lang_set"), reply_markup=markup)
+
+    # 2. Handle Currency Selection
+    elif text in ["🇺🇸 USD", "🇪🇺 EUR", "🇷🇺 RUB"]:
+        if chat_id not in user_lang:
+            bot.send_message(chat_id, "Please use /start to set your language first.")
+            return
+        
+        currency = text.split(" ")[1]
         user_choice[chat_id] = currency
-        bot.send_message(chat_id, f"How much UZS do you want to convert to {currency}?")
+        bot.send_message(chat_id, get_text(chat_id, "prompt", currency=currency))
 
+    # 3. Handle Amount (Conversion)
     else:
         currency = user_choice.get(chat_id)
+        if not currency:
+            bot.send_message(chat_id, get_text(chat_id, "choose_currency"))
+            return
 
-        if currency:
-            try:
-                # Fixed the typo here (.strip())
-                amount = float(message.text.replace(",", "").strip())
-                
-                # Fixed the duplicate assignment
-                response = requests.get(f"https://v6.exchangerate-api.com/v6/{os.getenv('API_KEY')}/latest/UZS")
-                data = response.json()
-
-                rate = data["conversion_rates"][currency]
-                result = amount * rate
-
-                bot.send_message(chat_id, f"✅ {amount:,.0f} UZS = {result:.2f} {currency}")
-                user_choice[chat_id] = None # Reset after result
-                start(message) # Restart flow
-
-            except ValueError:
-                bot.send_message(chat_id, "⚠️ Please enter a valid number, e.g. 50000")
-            except Exception as e:
-                print("ERROR:", e)
-                bot.send_message(chat_id, f"❌ Something went wrong: {e}")
-        else:
-            bot.send_message(chat_id, "Please choose a currency first using the buttons below.")
-
-
-
-
-
-
+        try:
+            amount = float(text.replace(",", "").strip())
+            response = requests.get(f"https://v6.exchangerate-api.com/v6/{os.getenv('API_KEY')}/latest/UZS")
+            data = response.json()
+            rate = data["conversion_rates"][currency]
+            result = amount * rate
+            
+            bot.send_message(chat_id, get_text(chat_id, "result", amount=amount, result=result, currency=currency))
+            user_choice[chat_id] = None # Reset
+        except ValueError:
+            bot.send_message(chat_id, get_text(chat_id, "error_num"))
+        except Exception as e:
+            bot.send_message(chat_id, f"❌ Error: {e}")
 
 bot.polling(non_stop=True)
